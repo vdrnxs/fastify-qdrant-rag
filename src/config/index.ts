@@ -4,6 +4,10 @@ export const config = {
     collectionName: process.env.COLLECTION_NAME || 'documents',
     vectorSize: parseInt(process.env.VECTOR_SIZE || '384')
   },
+  redis: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379')
+  },
   server: {
     port: parseInt(process.env.PORT || '3000'),
     host: process.env.HOST || '0.0.0.0'
