@@ -1,18 +1,12 @@
 import { qdrantClient, COLLECTION_NAME } from '../config/qdrant';
 import { generateMockVector } from '../utils/vectorUtils';
-
-export interface SearchResult {
-  id: string | number;
-  score: number;
-  text: string;
-  metadata: Record<string, any>;
-}
+import { SearchResponse } from '../types';
 
 export class SearchService {
   /**
    * Busca documentos similares en Qdrant
    */
-  async searchDocuments(query: string, limit: number = 10): Promise<{ results: SearchResult[], total: number }> {
+  async searchDocuments(query: string, limit: number = 10): Promise<SearchResponse> {
     const queryVector = generateMockVector();
 
     const searchResult = await qdrantClient.query(COLLECTION_NAME, {

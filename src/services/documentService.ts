@@ -1,11 +1,12 @@
 import { qdrantClient, COLLECTION_NAME } from '../config/qdrant';
 import { generateMockVector } from '../utils/vectorUtils';
+import { IngestResponse } from '../types';
 
 export class DocumentService {
   /**
    * Ingesta un documento en Qdrant
    */
-  async ingestDocument(text: string, metadata?: Record<string, any>) {
+  async ingestDocument(text: string, metadata?: Record<string, any>): Promise<IngestResponse> {
     const vector = generateMockVector();
     const pointId = Date.now();
 
