@@ -32,5 +32,8 @@ export interface HealthResponse {
     connected: boolean;
     collections?: number;
   };
+  redis: {
+    connected: boolean;
+  };
   timestamp: string;
 }
