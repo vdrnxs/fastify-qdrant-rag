@@ -1,9 +1,6 @@
 import { Queue } from 'bullmq';
-import { config } from '../config';
+import { redis } from '../config/redis';
 
 export const documentQueue = new Queue('documents', {
-  connection: {
-    host: config.redis.host,
-    port: config.redis.port
-  }
+  connection: redis
 });
