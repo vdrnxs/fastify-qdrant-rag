@@ -1,12 +1,13 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
 import 'dotenv/config';
+import { config } from './index';
 
-const url = new URL(process.env.QDRANT_URL || 'http://localhost:6333');
+const url = new URL(config.qdrant.url);
 
 export const qdrantClient = new QdrantClient({
   host: url.hostname,
   port: parseInt(url.port)
 });
 
-export const COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || 'documents';
-export const VECTOR_SIZE = parseInt(process.env.VECTOR_DIMENSIONS || '384');
+export const COLLECTION_NAME = config.qdrant.collectionName;
+export const VECTOR_SIZE = config.qdrant.vectorSize;
