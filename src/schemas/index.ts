@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const IngestSchema = z.object({
   text: z.string().min(1),
-  metadata: z.record(z.any()).optional()
+  metadata: z.record(z.string(), z.any()).optional()
 });
 
 export const SearchSchema = z.object({
