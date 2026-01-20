@@ -3,7 +3,7 @@ import { ZodError } from 'zod';
 import { ErrorResponse } from '../types';
 
 export function errorHandler(
-  error: FastifyError,
+  error: FastifyError | ZodError,
   request: FastifyRequest,
   reply: FastifyReply
 ) {
@@ -11,7 +11,7 @@ export function errorHandler(
   if (error instanceof ZodError) {
     const response: ErrorResponse = {
       error: 'Validation failed',
-      details: error.errors
+      details: error.issues
     };
     return reply.code(400).send(response);
   }
