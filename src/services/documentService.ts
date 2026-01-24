@@ -6,7 +6,7 @@ export class DocumentService {
   /**
    * Ingesta un documento en Qdrant
    */
-  async ingestDocument(text: string, metadata?: Record<string, any>): Promise<IngestResponse> {
+  async ingestDocument(text: string, metadata?: Record<string, unknown>): Promise<IngestResponse> {
     const vector = generateMockVector();
     const pointId = Date.now();
 

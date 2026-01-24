@@ -19,7 +19,7 @@ export class SearchService {
       id: point.id,
       score: point.score || 0,
       text: (point.payload?.text as string) || '',
-      metadata: (point.payload?.metadata as Record<string, any>) || {}
+      metadata: (point.payload?.metadata as Record<string, unknown>) || {}
     }));
 
     return {

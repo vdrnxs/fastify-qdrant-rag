@@ -1,6 +1,6 @@
 export interface DocumentJobData {
   text: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface DocumentJobResult {
