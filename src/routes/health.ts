@@ -10,7 +10,7 @@ async function checkQdrantConnection(): Promise<{ connected: boolean; collection
       connected: true,
       collections: collections.collections.length
     };
-  } catch (error) {
+  } catch {
     return { connected: false };
   }
 }
@@ -19,7 +19,7 @@ async function checkRedisConnection(): Promise<{ connected: boolean }> {
   try {
     await redis.ping();
     return { connected: true };
-  } catch (error) {
+  } catch {
     return { connected: false };
   }
 }
