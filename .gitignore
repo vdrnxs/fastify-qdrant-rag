@@ -5,3 +5,4 @@ dist
 .DS_Store
 qdrant_storage
 plan.md
+temp/

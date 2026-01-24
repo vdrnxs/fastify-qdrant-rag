@@ -11,5 +11,10 @@ export const config = {
   server: {
     port: parseInt(process.env.PORT || '3000'),
     host: process.env.HOST || '0.0.0.0'
+  },
+  upload: {
+    maxFileSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB || '50'),
+    allowedTypes: ['pdf'], // Start with PDF only, expand later
+    tempDir: process.env.TEMP_UPLOAD_DIR || './temp/uploads'
   }
 };
