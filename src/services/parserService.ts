@@ -1,23 +1,31 @@
-import pdfParse from 'pdf-parse';
+import { extractText } from 'unpdf';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { ParsedDocument } from '../types';
 
 export class ParserService {
   /**
-   * Parse a PDF file and extract text
+   * Parse a PDF file and extract text using unpdf
    */
   async parsePDF(filePath: string): Promise<ParsedDocument> {
     const buffer = await readFile(filePath);
-    const data = await pdfParse(buffer);
+
+    // Extract text from PDF
+    const { text, totalPages } = await extractText(buffer, { mergePages: true });
+
+    // Clean and count words properly
+    const cleanText = text.trim();
+    const wordCount = cleanText.length > 0
+      ? cleanText.split(/\s+/).filter((word: string) => word.length > 0).length
+      : 0;
 
     return {
-      text: data.text,
+      text: cleanText,
       metadata: {
         filename: path.basename(filePath),
         fileType: 'pdf',
-        pageCount: data.numpages,
-        wordCount: data.text.split(/\s+/).filter(word => word.length > 0).length
+        pageCount: totalPages,
+        wordCount
       }
     };
   }
