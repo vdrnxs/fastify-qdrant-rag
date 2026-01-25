@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import multipart from '@fastify/multipart';
 import 'dotenv/config';
 import { documentsRoutes } from './routes/documents';
 import { searchRoutes } from './routes/search';
@@ -9,6 +10,13 @@ import { config } from './config';
 import { documentWorker } from './workers/documentWorker';
 
 const fastify = Fastify({ logger: true });
+
+// Register plugins
+fastify.register(multipart, {
+  limits: {
+    fileSize: config.upload.maxFileSizeMB * 1024 * 1024 // Convert MB to bytes
+  }
+});
 
 // Register error handler
 fastify.setErrorHandler(errorHandler);
