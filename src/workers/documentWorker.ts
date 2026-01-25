@@ -1,25 +1,62 @@
 import { Worker, Job } from 'bullmq';
 import { workerConnection } from '../config/redis';
 import { DocumentService } from '../services/documentService';
-import { DocumentJobData, DocumentJobResult } from '../types/jobs.types';
+import { DocumentJobResult, JobType } from '../types/jobs.types';
+import { QueueJobData } from '../queues/documentQueue';
+import { ParserService } from '../services/parserService';
+import { unlink } from 'fs/promises';
 
 const documentService = new DocumentService();
-async function processDocumentJob(job: Job<DocumentJobData>): Promise<DocumentJobResult> {
-  const { text, metadata } = job.data;
+const parserService = new ParserService();
 
-  // Initialize progress tracking
+async function processDocumentJob(job: Job<QueueJobData>): Promise<DocumentJobResult> {
   await job.updateProgress(0);
 
-  // Process the document through the service
-  const result = await documentService.ingestDocument(text, metadata);
+  // Check if this is a parse job or legacy ingest job
+  if ('jobType' in job.data && job.data.jobType === JobType.PARSE_DOCUMENT) {
+    const { filePath, fileType, filename, metadata } = job.data;
 
-  // Mark as complete
-  await job.updateProgress(100);
+    try {
+      // Parse the document
+      await job.updateProgress(25);
+      const parsedDoc = await parserService.parseFile(filePath, fileType);
 
-  return result;
+      // Ingest the parsed text
+      await job.updateProgress(50);
+      const result = await documentService.ingestDocument(parsedDoc.text, {
+        ...metadata,
+        ...parsedDoc.metadata,
+        originalFilename: filename
+      });
+
+      // Clean up temporary file
+      await job.updateProgress(75);
+      await unlink(filePath);
+
+      await job.updateProgress(100);
+      return result;
+    } catch (error) {
+      // Ensure temp file is cleaned up even on error
+      try {
+        await unlink(filePath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      throw error;
+    }
+  } else {
+    // Legacy ingest job
+    if (!('text' in job.data)) {
+      throw new Error('Invalid job data: missing text field');
+    }
+    const { text, metadata } = job.data;
+    const result = await documentService.ingestDocument(text, metadata);
+    await job.updateProgress(100);
+    return result;
+  }
 }
 
-export const documentWorker = new Worker<DocumentJobData, DocumentJobResult>(
+export const documentWorker = new Worker<QueueJobData, DocumentJobResult>(
   'documents',
   processDocumentJob,
   {
