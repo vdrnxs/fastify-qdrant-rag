@@ -6,3 +6,4 @@ dist
 qdrant_storage
 plan.md
 temp/
+tsconfig.json
