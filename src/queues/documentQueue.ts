@@ -1,7 +1,10 @@
 import { Queue } from 'bullmq';
 import { queueConnection } from '../config/redis';
-import { DocumentJobData, DocumentJobResult } from '../types/jobs.types';
+import { DocumentJobData, DocumentJobResult, ParseDocumentJobData } from '../types/jobs.types';
 
-export const documentQueue = new Queue<DocumentJobData, DocumentJobResult>('documents', {
+// Union type to support both legacy and new job types
+export type QueueJobData = DocumentJobData | ParseDocumentJobData;
+
+export const documentQueue = new Queue<QueueJobData, DocumentJobResult>('documents', {
   connection: queueConnection
 });
