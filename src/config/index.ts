@@ -1,3 +1,5 @@
+import path from 'path';
+
 export const config = {
   qdrant: {
     url: process.env.QDRANT_URL || 'http://localhost:6333',
@@ -15,6 +17,6 @@ export const config = {
   upload: {
     maxFileSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB || '50'),
     allowedTypes: ['pdf'], // Start with PDF only, expand later
-    tempDir: process.env.TEMP_UPLOAD_DIR || './temp/uploads'
+    tempDir: path.resolve(process.cwd(), process.env.TEMP_UPLOAD_DIR || 'temp/uploads')
   }
 };
