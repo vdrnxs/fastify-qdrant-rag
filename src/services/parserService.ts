@@ -10,8 +10,11 @@ export class ParserService {
   async parsePDF(filePath: string): Promise<ParsedDocument> {
     const buffer = await readFile(filePath);
 
+    // Convert Buffer to Uint8Array for unpdf
+    const uint8Array = new Uint8Array(buffer);
+
     // Extract text from PDF
-    const { text, totalPages } = await extractText(buffer, { mergePages: true });
+    const { text, totalPages } = await extractText(uint8Array, { mergePages: true });
 
     // Clean and count words properly
     const cleanText = text.trim();
