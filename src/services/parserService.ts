@@ -16,11 +16,9 @@ export class ParserService {
     // Extract text from PDF
     const { text, totalPages } = await extractText(uint8Array, { mergePages: true });
 
-    // Clean and count words properly
+    // Clean and count words
     const cleanText = text.trim();
-    const wordCount = cleanText.length > 0
-      ? cleanText.split(/\s+/).filter((word: string) => word.length > 0).length
-      : 0;
+    const wordCount = cleanText ? cleanText.split(/\s+/).length : 0;
 
     return {
       text: cleanText,
