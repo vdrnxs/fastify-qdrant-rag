@@ -5,6 +5,7 @@ import { DocumentJobResult, JobType } from '../types/jobs.types';
 import { QueueJobData } from '../queues/documentQueue';
 import { ParserService } from '../services/parserService';
 import { unlink } from 'fs/promises';
+import { fileTrackerService } from '../services/fileTrackerService';
 
 const documentService = new DocumentService();
 const parserService = new ParserService();
@@ -33,6 +34,11 @@ async function processDocumentJob(job: Job<QueueJobData>): Promise<DocumentJobRe
       await job.updateProgress(75);
       await unlink(filePath);
 
+      // Actualizar estado del archivo si tiene fileId en metadata
+      if (metadata?.fileId) {
+        await fileTrackerService.markFileAsProcessed(metadata.fileId as string);
+      }
+
       await job.updateProgress(100);
       return result;
     } catch (error) {
@@ -42,6 +48,15 @@ async function processDocumentJob(job: Job<QueueJobData>): Promise<DocumentJobRe
       } catch {
         // Ignore cleanup errors
       }
+
+      // Marcar archivo con error si tiene fileId
+      if (job.data.metadata?.fileId) {
+        await fileTrackerService.markFileAsError(
+          job.data.metadata.fileId as string,
+          error instanceof Error ? error.message : 'Unknown error'
+        );
+      }
+
       throw error;
     }
   } else {
