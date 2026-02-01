@@ -1,7 +1,8 @@
 // Prisma schema for file tracking system
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -11,28 +12,23 @@ datasource db {
 // Tabla principal de archivos monitorizados
 model File {
   id            String   @id @default(cuid())
-  filePath      String   @unique // Ruta completa del archivo
-  fileName      String              // Nombre del archivo
-  fileExtension String              // Extensión (.pdf, .txt, etc)
-  fileSize      Int                 // Tamaño en bytes
+  filePath      String   @unique
+  fileName      String
+  fileExtension String
+  fileSize      Int
 
-  // Hash para detección de cambios
-  contentHash   String              // SHA-256 del contenido
+  contentHash   String
 
-  // Tracking de estado
   status        FileStatus @default(PENDING)
-  lastModified  DateTime            // Última modificación del archivo
+  lastModified  DateTime
   lastScanned   DateTime @default(now())
 
-  // Metadata del procesamiento
   processingAttempts Int @default(0)
   lastError     String?
 
-  // Relación con el folder configurado
   folderId      String
   folder        MonitoredFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
 
-  // Relación con documentos procesados en Qdrant
   documents     Document[]
 
   createdAt     DateTime @default(now())
@@ -43,16 +39,14 @@ model File {
   @@index([contentHash])
 }
 
-// Tabla de folders monitorizados
 model MonitoredFolder {
   id          String   @id @default(cuid())
-  path        String   @unique         // Ruta del folder
-  name        String                   // Nombre descriptivo
-  isActive    Boolean  @default(true)  // Si está activo el monitoreo
+  path        String   @unique
+  name        String
+  isActive    Boolean  @default(true)
 
-  // Configuración de escaneo
-  scanPattern String?                  // Glob pattern (ej: "*.pdf")
-  recursive   Boolean  @default(true)  // Escanear subdirectorios
+  scanPattern String?
+  recursive   Boolean  @default(true)
 
   files       File[]
 
@@ -60,21 +54,17 @@ model MonitoredFolder {
   updatedAt   DateTime @updatedAt
 }
 
-// Tabla de documentos procesados (chunks en Qdrant)
 model Document {
   id          String   @id @default(cuid())
 
-  // Relación con el archivo origen
   fileId      String
   file        File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
-  // Información del chunk en Qdrant
-  qdrantPointId String            // ID del punto en Qdrant
-  chunkIndex    Int               // Índice del chunk dentro del archivo
-  chunkText     String            // Texto del chunk (para búsqueda local)
+  qdrantPointId String
+  chunkIndex    Int
+  chunkText     String
 
-  // Metadata
-  metadata      String?           // JSON con metadata adicional
+  metadata      String?
 
   createdAt     DateTime @default(now())
 
@@ -83,10 +73,10 @@ model Document {
 }
 
 enum FileStatus {
-  PENDING       // Esperando ser procesado
-  PROCESSING    // En proceso
-  COMPLETED     // Procesado exitosamente
-  ERROR         // Error al procesar
-  MODIFIED      // Modificado después de procesar
-  DELETED       // Archivo eliminado del filesystem
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+  MODIFIED
+  DELETED
 }
