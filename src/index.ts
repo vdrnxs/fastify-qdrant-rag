@@ -4,10 +4,13 @@ import 'dotenv/config';
 import { documentsRoutes } from './routes/documents';
 import { searchRoutes } from './routes/search';
 import { healthRoutes } from './routes/health';
+import { folderRoutes } from './routes/folders';
 import { qdrantClient, COLLECTION_NAME, VECTOR_SIZE } from './config/qdrant';
 import { errorHandler } from './middleware/errorHandler';
 import { config } from './config';
 import { documentWorker } from './workers/documentWorker';
+import { fileTrackerService } from './services/fileTrackerService';
+import { fileProcessorService } from './services/fileProcessorService';
 
 const fastify = Fastify({ logger: true });
 
@@ -25,6 +28,7 @@ fastify.setErrorHandler(errorHandler);
 fastify.register(healthRoutes);
 fastify.register(documentsRoutes);
 fastify.register(searchRoutes);
+fastify.register(folderRoutes);
 
 const start = async () => {
   try {
@@ -38,6 +42,16 @@ const start = async () => {
       });
       fastify.log.info(`Collection ${COLLECTION_NAME} created`);
     }
+
+    // Escanear folders monitorizados al iniciar
+    fastify.log.info('Scanning monitored folders...');
+    const scanResults = await fileTrackerService.scanAllFolders();
+    fastify.log.info('Scan completed', scanResults);
+
+    // Procesar archivos pendientes
+    fastify.log.info('Processing pending files...');
+    const queuedCount = await fileProcessorService.processPendingFiles();
+    fastify.log.info(`${queuedCount} files queued for processing`);
 
     await fastify.listen({ port: config.server.port, host: config.server.host });
     fastify.log.info('Document worker started');
