@@ -26,32 +26,13 @@ model File {
   processingAttempts Int @default(0)
   lastError     String?
 
-  folderId      String
-  folder        MonitoredFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
-
   documents     Document[]
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@index([folderId])
   @@index([status])
   @@index([contentHash])
-}
-
-model MonitoredFolder {
-  id          String   @id @default(cuid())
-  path        String   @unique
-  name        String
-  isActive    Boolean  @default(true)
-
-  scanPattern String?
-  recursive   Boolean  @default(true)
-
-  files       File[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 }
 
 model Document {
