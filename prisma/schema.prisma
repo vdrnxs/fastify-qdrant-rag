@@ -1,0 +1,92 @@
+// Prisma schema for file tracking system
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Tabla principal de archivos monitorizados
+model File {
+  id            String   @id @default(cuid())
+  filePath      String   @unique // Ruta completa del archivo
+  fileName      String              // Nombre del archivo
+  fileExtension String              // Extensión (.pdf, .txt, etc)
+  fileSize      Int                 // Tamaño en bytes
+
+  // Hash para detección de cambios
+  contentHash   String              // SHA-256 del contenido
+
+  // Tracking de estado
+  status        FileStatus @default(PENDING)
+  lastModified  DateTime            // Última modificación del archivo
+  lastScanned   DateTime @default(now())
+
+  // Metadata del procesamiento
+  processingAttempts Int @default(0)
+  lastError     String?
+
+  // Relación con el folder configurado
+  folderId      String
+  folder        MonitoredFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  // Relación con documentos procesados en Qdrant
+  documents     Document[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([folderId])
+  @@index([status])
+  @@index([contentHash])
+}
+
+// Tabla de folders monitorizados
+model MonitoredFolder {
+  id          String   @id @default(cuid())
+  path        String   @unique         // Ruta del folder
+  name        String                   // Nombre descriptivo
+  isActive    Boolean  @default(true)  // Si está activo el monitoreo
+
+  // Configuración de escaneo
+  scanPattern String?                  // Glob pattern (ej: "*.pdf")
+  recursive   Boolean  @default(true)  // Escanear subdirectorios
+
+  files       File[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Tabla de documentos procesados (chunks en Qdrant)
+model Document {
+  id          String   @id @default(cuid())
+
+  // Relación con el archivo origen
+  fileId      String
+  file        File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  // Información del chunk en Qdrant
+  qdrantPointId String            // ID del punto en Qdrant
+  chunkIndex    Int               // Índice del chunk dentro del archivo
+  chunkText     String            // Texto del chunk (para búsqueda local)
+
+  // Metadata
+  metadata      String?           // JSON con metadata adicional
+
+  createdAt     DateTime @default(now())
+
+  @@index([fileId])
+  @@index([qdrantPointId])
+}
+
+enum FileStatus {
+  PENDING       // Esperando ser procesado
+  PROCESSING    // En proceso
+  COMPLETED     // Procesado exitosamente
+  ERROR         // Error al procesar
+  MODIFIED      // Modificado después de procesar
+  DELETED       // Archivo eliminado del filesystem
+}
