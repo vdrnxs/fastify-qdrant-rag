@@ -7,3 +7,8 @@ qdrant_storage
 plan.md
 temp/
 tsconfig.json
+
+# Database
+data/
+*.db
+*.db-journal
