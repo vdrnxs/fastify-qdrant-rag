@@ -2,9 +2,16 @@ import { prisma } from '../config/database';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
-import { FileStatus } from '@prisma/client';
+import { documentQueue } from '../queues/documentQueue';
+import { JobType } from '../types/jobs.types';
 
 export class FileTrackerService {
+  private monitoredPath: string;
+
+  constructor() {
+    this.monitoredPath = process.env.MONITORED_FOLDER_PATH || './temp/uploads';
+  }
+
   /**
    * Calcula el hash SHA-256 de un archivo
    */
@@ -16,199 +23,165 @@ export class FileTrackerService {
   }
 
   /**
-   * Escanea un folder y registra/actualiza archivos en la base de datos
+   * Obtiene todos los archivos recursivamente en un directorio
    */
-  async scanFolder(folderId: string): Promise<{
-    added: number;
-    modified: number;
-    unchanged: number;
-    errors: number;
-  }> {
-    const folder = await prisma.monitoredFolder.findUnique({
-      where: { id: folderId }
-    });
-
-    if (!folder) {
-      throw new Error(`Folder with id ${folderId} not found`);
-    }
-
-    if (!folder.isActive) {
-      throw new Error(`Folder ${folder.name} is not active`);
-    }
-
-    const stats = { added: 0, modified: 0, unchanged: 0, errors: 0 };
-    const files = await this.getFilesInFolder(folder.path, folder.recursive, folder.scanPattern);
-
-    for (const filePath of files) {
-      try {
-        await this.processFile(filePath, folderId, stats);
-      } catch (error) {
-        console.error(`Error processing file ${filePath}:`, error);
-        stats.errors++;
-      }
-    }
-
-    // Marcar archivos eliminados
-    await this.markDeletedFiles(folderId, files);
-
-    return stats;
-  }
-
-  /**
-   * Procesa un archivo individual
-   */
-  private async processFile(
-    filePath: string,
-    folderId: string,
-    stats: { added: number; modified: number; unchanged: number }
-  ): Promise<void> {
-    const fileStats = await fs.stat(filePath);
-    const contentHash = await this.calculateFileHash(filePath);
-    const fileName = path.basename(filePath);
-    const fileExtension = path.extname(filePath);
-
-    const existingFile = await prisma.file.findUnique({
-      where: { filePath }
-    });
-
-    if (!existingFile) {
-      // Archivo nuevo
-      await prisma.file.create({
-        data: {
-          filePath,
-          fileName,
-          fileExtension,
-          fileSize: fileStats.size,
-          contentHash,
-          status: FileStatus.PENDING,
-          lastModified: fileStats.mtime,
-          lastScanned: new Date(),
-          folderId,
-          processingAttempts: 0
-        }
-      });
-      stats.added++;
-    } else if (existingFile.contentHash !== contentHash) {
-      // Archivo modificado
-      await prisma.file.update({
-        where: { id: existingFile.id },
-        data: {
-          contentHash,
-          fileSize: fileStats.size,
-          lastModified: fileStats.mtime,
-          lastScanned: new Date(),
-          status: FileStatus.MODIFIED,
-          processingAttempts: 0,
-          lastError: null
-        }
-      });
-      stats.modified++;
-    } else {
-      // Archivo sin cambios
-      await prisma.file.update({
-        where: { id: existingFile.id },
-        data: {
-          lastScanned: new Date()
-        }
-      });
-      stats.unchanged++;
-    }
-  }
-
-  /**
-   * Marca archivos que ya no existen en el filesystem
-   */
-  private async markDeletedFiles(folderId: string, existingFiles: string[]): Promise<void> {
-    const dbFiles = await prisma.file.findMany({
-      where: {
-        folderId,
-        status: { not: FileStatus.DELETED }
-      }
-    });
-
-    const existingSet = new Set(existingFiles);
-
-    for (const dbFile of dbFiles) {
-      if (!existingSet.has(dbFile.filePath)) {
-        await prisma.file.update({
-          where: { id: dbFile.id },
-          data: { status: FileStatus.DELETED }
-        });
-      }
-    }
-  }
-
-  /**
-   * Obtiene lista de archivos en un folder
-   */
-  private async getFilesInFolder(
-    folderPath: string,
-    recursive: boolean,
-    pattern?: string | null
-  ): Promise<string[]> {
+  private async getFilesRecursively(dir: string): Promise<string[]> {
     const files: string[] = [];
 
-    const scan = async (dir: string): Promise<void> => {
+    try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
 
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
-          if (recursive) {
-            await scan(fullPath);
-          }
+          const subFiles = await this.getFilesRecursively(fullPath);
+          files.push(...subFiles);
         } else if (entry.isFile()) {
-          // Filtrar por patrón si existe
-          if (!pattern || this.matchesPattern(entry.name, pattern)) {
-            files.push(fullPath);
-          }
+          files.push(fullPath);
         }
       }
-    };
+    } catch (error) {
+      // Folder doesn't exist or no permissions
+      console.error(`Error reading directory ${dir}:`, error);
+    }
 
-    await scan(folderPath);
     return files;
   }
 
   /**
-   * Simple pattern matching (soporta *.ext)
+   * Obtiene todos los archivos en el folder monitorizado
    */
-  private matchesPattern(filename: string, pattern: string): boolean {
-    if (pattern.startsWith('*.')) {
-      const ext = pattern.slice(1);
-      return filename.endsWith(ext);
+  private async getFilesInFolder(): Promise<string[]> {
+    return this.getFilesRecursively(this.monitoredPath);
+  }
+
+  /**
+   * Escanea el folder monitorizado y registra/actualiza archivos
+   */
+  async scanFolder(): Promise<{
+    added: number;
+    modified: number;
+    unchanged: number;
+    errors: number;
+  }> {
+    const stats = { added: 0, modified: 0, unchanged: 0, errors: 0 };
+
+    try {
+      const files = await this.getFilesInFolder();
+      const processedPaths = new Set<string>();
+
+      for (const filePath of files) {
+        try {
+          processedPaths.add(filePath);
+          const fileStats = await fs.stat(filePath);
+          const fileName = path.basename(filePath);
+          const fileExtension = path.extname(filePath).toLowerCase();
+          const contentHash = await this.calculateFileHash(filePath);
+
+          // Buscar archivo existente
+          const existingFile = await prisma.file.findUnique({
+            where: { filePath }
+          });
+
+          if (!existingFile) {
+            // Archivo nuevo
+            await prisma.file.create({
+              data: {
+                filePath,
+                fileName,
+                fileExtension,
+                fileSize: fileStats.size,
+                contentHash,
+                status: 'PENDING',
+                lastModified: fileStats.mtime
+              }
+            });
+            stats.added++;
+          } else if (existingFile.contentHash !== contentHash) {
+            // Archivo modificado
+            await prisma.file.update({
+              where: { id: existingFile.id },
+              data: {
+                contentHash,
+                status: 'MODIFIED',
+                lastModified: fileStats.mtime,
+                lastScanned: new Date(),
+                fileSize: fileStats.size
+              }
+            });
+            stats.modified++;
+          } else {
+            // Archivo sin cambios
+            await prisma.file.update({
+              where: { id: existingFile.id },
+              data: { lastScanned: new Date() }
+            });
+            stats.unchanged++;
+          }
+        } catch (error) {
+          console.error(`Error processing file ${filePath}:`, error);
+          stats.errors++;
+        }
+      }
+
+      // Marcar archivos eliminados
+      const allFiles = await prisma.file.findMany();
+      for (const file of allFiles) {
+        if (!processedPaths.has(file.filePath)) {
+          await prisma.file.update({
+            where: { id: file.id },
+            data: { status: 'DELETED' }
+          });
+        }
+      }
+
+      return stats;
+    } catch (error) {
+      console.error('Error scanning folder:', error);
+      throw error;
     }
-    return filename.includes(pattern);
   }
 
   /**
-   * Obtiene archivos pendientes de procesar
+   * Procesa archivos pendientes y modificados
    */
-  async getPendingFiles(limit = 10): Promise<Array<{
-    id: string;
-    filePath: string;
-    fileName: string;
-    status: FileStatus;
-  }>> {
-    return prisma.file.findMany({
+  async processPendingFiles(): Promise<number> {
+    const files = await prisma.file.findMany({
       where: {
-        status: { in: [FileStatus.PENDING, FileStatus.MODIFIED] },
-        folder: { isActive: true }
-      },
-      take: limit,
-      orderBy: { lastModified: 'desc' }
+        status: {
+          in: ['PENDING', 'MODIFIED']
+        }
+      }
     });
+
+    for (const file of files) {
+      await prisma.file.update({
+        where: { id: file.id },
+        data: { status: 'PROCESSING' }
+      });
+
+      await documentQueue.add('parse', {
+        jobType: JobType.PARSE_DOCUMENT,
+        filePath: file.filePath,
+        filename: file.fileName,
+        fileType: file.fileExtension,
+        metadata: { fileId: file.id }
+      });
+    }
+
+    return files.length;
   }
 
   /**
-   * Marca un archivo como procesado exitosamente
+   * Marca un archivo como procesado correctamente
    */
   async markFileAsProcessed(fileId: string): Promise<void> {
     await prisma.file.update({
       where: { id: fileId },
       data: {
-        status: FileStatus.COMPLETED
+        status: 'COMPLETED',
+        processingAttempts: { increment: 1 }
       }
     });
   }
@@ -217,112 +190,27 @@ export class FileTrackerService {
    * Marca un archivo con error
    */
   async markFileAsError(fileId: string, error: string): Promise<void> {
-    const file = await prisma.file.findUnique({ where: { id: fileId } });
-
     await prisma.file.update({
       where: { id: fileId },
       data: {
-        status: FileStatus.ERROR,
+        status: 'ERROR',
         lastError: error,
-        processingAttempts: (file?.processingAttempts || 0) + 1
+        processingAttempts: { increment: 1 }
       }
     });
   }
 
   /**
-   * Agrega un nuevo folder para monitorizar
+   * Obtiene archivos pendientes
    */
-  async addMonitoredFolder(
-    folderPath: string,
-    name: string,
-    options: {
-      recursive?: boolean;
-      scanPattern?: string;
-    } = {}
-  ): Promise<string> {
-    // Verificar que el folder existe
-    try {
-      await fs.access(folderPath);
-    } catch {
-      throw new Error(`Folder ${folderPath} does not exist or is not accessible`);
-    }
-
-    const folder = await prisma.monitoredFolder.create({
-      data: {
-        path: folderPath,
-        name,
-        recursive: options.recursive ?? true,
-        scanPattern: options.scanPattern || null,
-        isActive: true
-      }
-    });
-
-    return folder.id;
-  }
-
-  /**
-   * Lista todos los folders monitorizados
-   */
-  async listMonitoredFolders() {
-    return prisma.monitoredFolder.findMany({
-      include: {
-        _count: {
-          select: { files: true }
+  async getPendingFiles() {
+    return await prisma.file.findMany({
+      where: {
+        status: {
+          in: ['PENDING', 'MODIFIED']
         }
       }
     });
-  }
-
-  /**
-   * Desactiva un folder monitorizado
-   */
-  async deactivateFolder(folderId: string): Promise<void> {
-    await prisma.monitoredFolder.update({
-      where: { id: folderId },
-      data: { isActive: false }
-    });
-  }
-
-  /**
-   * Activa un folder monitorizado
-   */
-  async activateFolder(folderId: string): Promise<void> {
-    await prisma.monitoredFolder.update({
-      where: { id: folderId },
-      data: { isActive: true }
-    });
-  }
-
-  /**
-   * Escanea todos los folders activos
-   */
-  async scanAllFolders(): Promise<Record<string, {
-    added: number;
-    modified: number;
-    unchanged: number;
-    errors: number;
-  }>> {
-    const folders = await prisma.monitoredFolder.findMany({
-      where: { isActive: true }
-    });
-
-    const results: Record<string, {
-      added: number;
-      modified: number;
-      unchanged: number;
-      errors: number;
-    }> = {};
-
-    for (const folder of folders) {
-      try {
-        results[folder.name] = await this.scanFolder(folder.id);
-      } catch (error) {
-        console.error(`Error scanning folder ${folder.name}:`, error);
-        results[folder.name] = { added: 0, modified: 0, unchanged: 0, errors: 1 };
-      }
-    }
-
-    return results;
   }
 }
 
