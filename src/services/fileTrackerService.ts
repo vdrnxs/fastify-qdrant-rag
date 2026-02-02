@@ -14,7 +14,7 @@ interface FileUpdateData {
   lastModified?: Date;
   lastScanned?: Date;
   fileSize?: number;
-  lastError?: string;
+  lastError?: string | null;
   processingAttempts?: { increment: number };
 }
 
@@ -70,18 +70,32 @@ export class FileTrackerService {
     const fileExtension = path.extname(filePath).toLowerCase().replace('.', '');
     const contentHash = await hashFile(filePath, { algorithm: 'sha256' });
 
-    if (!existingFile) {
-      await prisma.file.create({
-        data: {
-          filePath,
-          fileName,
-          fileExtension,
-          fileSize: fileStats.size,
+    // Si no existe o estaba marcado como DELETED, tratarlo como nuevo
+    if (!existingFile || existingFile.status === 'DELETED') {
+      if (!existingFile) {
+        await prisma.file.create({
+          data: {
+            filePath,
+            fileName,
+            fileExtension,
+            fileSize: fileStats.size,
+            contentHash,
+            status: 'PENDING',
+            lastModified: fileStats.mtime
+          }
+        });
+      } else {
+        // Reactivar archivo previamente eliminado
+        await this.updateFile(existingFile.id, {
           contentHash,
           status: 'PENDING',
-          lastModified: fileStats.mtime
-        }
-      });
+          lastModified: fileStats.mtime,
+          lastScanned: new Date(),
+          fileSize: fileStats.size,
+          lastError: null,
+          processingAttempts: { increment: 0 } // Reset counter
+        });
+      }
       return 'added';
     }
 
