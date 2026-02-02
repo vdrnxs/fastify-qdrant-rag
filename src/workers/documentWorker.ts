@@ -15,7 +15,7 @@ async function processDocumentJob(job: Job<QueueJobData>): Promise<DocumentJobRe
 
   // Check if this is a parse job or legacy ingest job
   if ('jobType' in job.data && job.data.jobType === JobType.PARSE_DOCUMENT) {
-    const { filePath, fileType, filename, metadata } = job.data;
+    const { filePath, fileType, filename, metadata, shouldDeleteAfterProcessing } = job.data;
 
     try {
       // Parse the document
@@ -30,9 +30,12 @@ async function processDocumentJob(job: Job<QueueJobData>): Promise<DocumentJobRe
         originalFilename: filename
       });
 
-      // Clean up temporary file
       await job.updateProgress(75);
-      await unlink(filePath);
+
+      // Borrar archivo solo si está marcado explícitamente para eliminación
+      if (shouldDeleteAfterProcessing) {
+        await unlink(filePath);
+      }
 
       // Actualizar estado del archivo si tiene fileId en metadata
       if (metadata?.fileId) {
@@ -42,11 +45,13 @@ async function processDocumentJob(job: Job<QueueJobData>): Promise<DocumentJobRe
       await job.updateProgress(100);
       return result;
     } catch (error) {
-      // Ensure temp file is cleaned up even on error
-      try {
-        await unlink(filePath);
-      } catch {
-        // Ignore cleanup errors
+      // Limpiar archivo temporal solo si estaba marcado para eliminación
+      if (shouldDeleteAfterProcessing) {
+        try {
+          await unlink(filePath);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
 
       // Marcar archivo con error si tiene fileId
