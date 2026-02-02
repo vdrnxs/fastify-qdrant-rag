@@ -20,6 +20,7 @@ export interface ParseDocumentJobData {
   filePath: string;
   filename: string;
   fileType: string;
+  shouldDeleteAfterProcessing?: boolean; // true para archivos temporales de API, false para archivos monitoreados
   metadata?: Record<string, unknown>;
 }
 
