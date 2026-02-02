@@ -26,31 +26,11 @@ model File {
   processingAttempts Int @default(0)
   lastError     String?
 
-  documents     Document[]
-
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([status])
   @@index([contentHash])
-}
-
-model Document {
-  id          String   @id @default(cuid())
-
-  fileId      String
-  file        File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
-
-  qdrantPointId String
-  chunkIndex    Int
-  chunkText     String
-
-  metadata      String?
-
-  createdAt     DateTime @default(now())
-
-  @@index([fileId])
-  @@index([qdrantPointId])
 }
 
 enum FileStatus {
