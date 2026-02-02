@@ -5,6 +5,7 @@ import { config } from '../config';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { JobType } from '../types/jobs.types';
+import { ingestionService } from '../services/ingestionService';
 
 export async function documentsRoutes(fastify: FastifyInstance) {
   // Ensure temp directory exists
@@ -13,27 +14,15 @@ export async function documentsRoutes(fastify: FastifyInstance) {
   fastify.post('/documents/ingest', async (request) => {
     const body = IngestSchema.parse(request.body);
 
-    const job = await documentQueue.add('ingest', {
+    const result = await ingestionService.ingest({
       text: body.text,
       metadata: body.metadata
-    }, {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 1000
-      },
-      removeOnComplete: {
-        count: 100,
-        age: 3600
-      },
-      removeOnFail: {
-        age: 604800
-      }
     });
 
     return {
-      jobId: job.id,
-      message: 'Document queued for processing'
+      id: result.id,
+      success: result.success,
+      message: 'Document ingested successfully'
     };
   });
 
