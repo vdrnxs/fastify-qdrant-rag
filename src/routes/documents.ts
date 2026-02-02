@@ -71,6 +71,7 @@ export async function documentsRoutes(fastify: FastifyInstance) {
       filePath: tempFilePath,
       filename: data.filename,
       fileType: fileExt,
+      shouldDeleteAfterProcessing: true, // Archivos temporales de API deben borrarse
       metadata: {
         uploadedAt: new Date().toISOString(),
         originalSize: buffer.length
