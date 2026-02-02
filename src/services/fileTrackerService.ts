@@ -6,11 +6,44 @@ import path from 'path';
 import { documentQueue } from '../queues/documentQueue';
 import { JobType } from '../types/jobs.types';
 
+type FileStatus = 'PENDING' | 'MODIFIED' | 'PROCESSING' | 'COMPLETED' | 'ERROR' | 'DELETED';
+
+interface FileUpdateData {
+  status?: FileStatus;
+  contentHash?: string;
+  lastModified?: Date;
+  lastScanned?: Date;
+  fileSize?: number;
+  lastError?: string;
+  processingAttempts?: { increment: number };
+}
+
 export class FileTrackerService {
   private monitoredPath: string;
 
   constructor() {
-    this.monitoredPath = process.env.MONITORED_FOLDER_PATH || './temp/uploads';
+    this.monitoredPath = process.env.MONITORED_FOLDER_PATH || './files';
+  }
+
+  /**
+   * Helper: Actualiza un archivo en la base de datos
+   */
+  private async updateFile(fileId: string, data: FileUpdateData): Promise<void> {
+    await prisma.file.update({
+      where: { id: fileId },
+      data
+    });
+  }
+
+  /**
+   * Helper: Obtiene archivos por estado(s)
+   */
+  private async getFilesByStatus(statuses: FileStatus[]) {
+    return await prisma.file.findMany({
+      where: {
+        status: { in: statuses }
+      }
+    });
   }
 
   /**
@@ -23,6 +56,50 @@ export class FileTrackerService {
       onlyFiles: true,
       dot: false
     });
+  }
+
+  /**
+   * Helper: Procesa un archivo individual y retorna su resultado
+   */
+  private async processIndividualFile(
+    filePath: string,
+    existingFile: any | undefined
+  ): Promise<'added' | 'modified' | 'unchanged'> {
+    const fileStats = await fs.stat(filePath);
+    const fileName = path.basename(filePath);
+    const fileExtension = path.extname(filePath).toLowerCase().replace('.', '');
+    const contentHash = await hashFile(filePath, { algorithm: 'sha256' });
+
+    if (!existingFile) {
+      await prisma.file.create({
+        data: {
+          filePath,
+          fileName,
+          fileExtension,
+          fileSize: fileStats.size,
+          contentHash,
+          status: 'PENDING',
+          lastModified: fileStats.mtime
+        }
+      });
+      return 'added';
+    }
+
+    if (existingFile.contentHash !== contentHash) {
+      await this.updateFile(existingFile.id, {
+        contentHash,
+        status: 'MODIFIED',
+        lastModified: fileStats.mtime,
+        lastScanned: new Date(),
+        fileSize: fileStats.size
+      });
+      return 'modified';
+    }
+
+    await this.updateFile(existingFile.id, {
+      lastScanned: new Date()
+    });
+    return 'unchanged';
   }
 
   /**
@@ -40,65 +117,23 @@ export class FileTrackerService {
       const files = await this.getFilesInFolder();
       const processedPaths = new Set<string>();
 
-      // Obtener todos los archivos existentes de una vez
       const existingFiles = await prisma.file.findMany();
       const existingFilesMap = new Map(
         existingFiles.map(f => [f.filePath, f])
       );
 
-      // Procesar archivos en el sistema de archivos
       for (const filePath of files) {
         try {
           processedPaths.add(filePath);
-          const fileStats = await fs.stat(filePath);
-          const fileName = path.basename(filePath);
-          const fileExtension = path.extname(filePath).toLowerCase().replace('.', '');
-          const contentHash = await hashFile(filePath, { algorithm: 'sha256' });
-
           const existingFile = existingFilesMap.get(filePath);
-
-          if (!existingFile) {
-            // Archivo nuevo
-            await prisma.file.create({
-              data: {
-                filePath,
-                fileName,
-                fileExtension,
-                fileSize: fileStats.size,
-                contentHash,
-                status: 'PENDING',
-                lastModified: fileStats.mtime
-              }
-            });
-            stats.added++;
-          } else if (existingFile.contentHash !== contentHash) {
-            // Archivo modificado
-            await prisma.file.update({
-              where: { id: existingFile.id },
-              data: {
-                contentHash,
-                status: 'MODIFIED',
-                lastModified: fileStats.mtime,
-                lastScanned: new Date(),
-                fileSize: fileStats.size
-              }
-            });
-            stats.modified++;
-          } else {
-            // Archivo sin cambios
-            await prisma.file.update({
-              where: { id: existingFile.id },
-              data: { lastScanned: new Date() }
-            });
-            stats.unchanged++;
-          }
+          const result = await this.processIndividualFile(filePath, existingFile);
+          stats[result]++;
         } catch (error) {
           console.error(`Error processing file ${filePath}:`, error);
           stats.errors++;
         }
       }
 
-      // Marcar archivos eliminados en batch
       const deletedFiles = existingFiles.filter(
         file => !processedPaths.has(file.filePath)
       );
@@ -123,13 +158,8 @@ export class FileTrackerService {
    * Procesa archivos pendientes y modificados
    */
   async processPendingFiles(): Promise<number> {
-    const files = await prisma.file.findMany({
-      where: {
-        status: { in: ['PENDING', 'MODIFIED'] }
-      }
-    });
+    const files = await this.getFilesByStatus(['PENDING', 'MODIFIED']);
 
-    // Actualizar todos los estados a PROCESSING en batch
     if (files.length > 0) {
       await prisma.file.updateMany({
         where: {
@@ -138,13 +168,13 @@ export class FileTrackerService {
         data: { status: 'PROCESSING' }
       });
 
-      // Agregar trabajos a la cola
       for (const file of files) {
         await documentQueue.add('parse', {
           jobType: JobType.PARSE_DOCUMENT,
           filePath: file.filePath,
           filename: file.fileName,
           fileType: file.fileExtension,
+          shouldDeleteAfterProcessing: false, // Archivos monitoreados NO deben borrarse
           metadata: { fileId: file.id }
         });
       }
@@ -157,12 +187,9 @@ export class FileTrackerService {
    * Marca un archivo como procesado correctamente
    */
   async markFileAsProcessed(fileId: string): Promise<void> {
-    await prisma.file.update({
-      where: { id: fileId },
-      data: {
-        status: 'COMPLETED',
-        processingAttempts: { increment: 1 }
-      }
+    await this.updateFile(fileId, {
+      status: 'COMPLETED',
+      processingAttempts: { increment: 1 }
     });
   }
 
@@ -170,13 +197,10 @@ export class FileTrackerService {
    * Marca un archivo con error
    */
   async markFileAsError(fileId: string, error: string): Promise<void> {
-    await prisma.file.update({
-      where: { id: fileId },
-      data: {
-        status: 'ERROR',
-        lastError: error,
-        processingAttempts: { increment: 1 }
-      }
+    await this.updateFile(fileId, {
+      status: 'ERROR',
+      lastError: error,
+      processingAttempts: { increment: 1 }
     });
   }
 
@@ -184,11 +208,7 @@ export class FileTrackerService {
    * Obtiene archivos pendientes
    */
   async getPendingFiles() {
-    return await prisma.file.findMany({
-      where: {
-        status: { in: ['PENDING', 'MODIFIED'] }
-      }
-    });
+    return await this.getFilesByStatus(['PENDING', 'MODIFIED']);
   }
 }
 
