@@ -3,7 +3,8 @@ import glob from 'fast-glob';
 import { hashFile } from 'hasha';
 import fs from 'fs/promises';
 import path from 'path';
-import { ingestionService } from './ingestionService';
+import { documentQueue } from '../queues/documentQueue';
+import { JobType } from '../types/jobs.types';
 
 type FileStatus = 'PENDING' | 'MODIFIED' | 'PROCESSING' | 'COMPLETED' | 'ERROR' | 'DELETED';
 
@@ -168,19 +169,17 @@ export class FileTrackerService {
       });
 
       for (const file of files) {
-        try {
-          await ingestionService.ingest({
-            filePath: file.filePath,
-            fileType: file.fileExtension,
-            filename: file.fileName,
-            shouldCleanup: false, // Archivos monitoreados NO deben borrarse
-            fileId: file.id,
-            metadata: { source: 'file-watcher' }
-          });
-        } catch (error) {
-          console.error(`Error processing file ${file.filePath}:`, error);
-          // El error ya fue manejado por ingestionService (markFileAsError)
-        }
+        await documentQueue.add('parse', {
+          jobType: JobType.PARSE_DOCUMENT,
+          filePath: file.filePath,
+          filename: file.fileName,
+          fileType: file.fileExtension,
+          shouldDeleteAfterProcessing: false, // Archivos monitoreados NO deben borrarse
+          metadata: {
+            source: 'file-watcher',
+            fileId: file.id
+          }
+        });
       }
     }
 
