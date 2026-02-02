@@ -1,5 +1,6 @@
 import { prisma } from '../config/database';
-import crypto from 'crypto';
+import glob from 'fast-glob';
+import { hashFile } from 'hasha';
 import fs from 'fs/promises';
 import path from 'path';
 import { documentQueue } from '../queues/documentQueue';
@@ -13,47 +14,15 @@ export class FileTrackerService {
   }
 
   /**
-   * Calcula el hash SHA-256 de un archivo
-   */
-  private async calculateFileHash(filePath: string): Promise<string> {
-    const fileBuffer = await fs.readFile(filePath);
-    const hashSum = crypto.createHash('sha256');
-    hashSum.update(fileBuffer);
-    return hashSum.digest('hex');
-  }
-
-  /**
-   * Obtiene todos los archivos recursivamente en un directorio
-   */
-  private async getFilesRecursively(dir: string): Promise<string[]> {
-    const files: string[] = [];
-
-    try {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-
-        if (entry.isDirectory()) {
-          const subFiles = await this.getFilesRecursively(fullPath);
-          files.push(...subFiles);
-        } else if (entry.isFile()) {
-          files.push(fullPath);
-        }
-      }
-    } catch (error) {
-      // Folder doesn't exist or no permissions
-      console.error(`Error reading directory ${dir}:`, error);
-    }
-
-    return files;
-  }
-
-  /**
-   * Obtiene todos los archivos en el folder monitorizado
+   * Obtiene todos los archivos en el folder monitorizado usando fast-glob
    */
   private async getFilesInFolder(): Promise<string[]> {
-    return this.getFilesRecursively(this.monitoredPath);
+    return await glob('**/*', {
+      cwd: this.monitoredPath,
+      absolute: true,
+      onlyFiles: true,
+      dot: false
+    });
   }
 
   /**
@@ -71,18 +40,22 @@ export class FileTrackerService {
       const files = await this.getFilesInFolder();
       const processedPaths = new Set<string>();
 
+      // Obtener todos los archivos existentes de una vez
+      const existingFiles = await prisma.file.findMany();
+      const existingFilesMap = new Map(
+        existingFiles.map(f => [f.filePath, f])
+      );
+
+      // Procesar archivos en el sistema de archivos
       for (const filePath of files) {
         try {
           processedPaths.add(filePath);
           const fileStats = await fs.stat(filePath);
           const fileName = path.basename(filePath);
-          const fileExtension = path.extname(filePath).toLowerCase();
-          const contentHash = await this.calculateFileHash(filePath);
+          const fileExtension = path.extname(filePath).toLowerCase().replace('.', '');
+          const contentHash = await hashFile(filePath, { algorithm: 'sha256' });
 
-          // Buscar archivo existente
-          const existingFile = await prisma.file.findUnique({
-            where: { filePath }
-          });
+          const existingFile = existingFilesMap.get(filePath);
 
           if (!existingFile) {
             // Archivo nuevo
@@ -125,15 +98,18 @@ export class FileTrackerService {
         }
       }
 
-      // Marcar archivos eliminados
-      const allFiles = await prisma.file.findMany();
-      for (const file of allFiles) {
-        if (!processedPaths.has(file.filePath)) {
-          await prisma.file.update({
-            where: { id: file.id },
-            data: { status: 'DELETED' }
-          });
-        }
+      // Marcar archivos eliminados en batch
+      const deletedFiles = existingFiles.filter(
+        file => !processedPaths.has(file.filePath)
+      );
+
+      if (deletedFiles.length > 0) {
+        await prisma.file.updateMany({
+          where: {
+            id: { in: deletedFiles.map(f => f.id) }
+          },
+          data: { status: 'DELETED' }
+        });
       }
 
       return stats;
@@ -149,25 +125,29 @@ export class FileTrackerService {
   async processPendingFiles(): Promise<number> {
     const files = await prisma.file.findMany({
       where: {
-        status: {
-          in: ['PENDING', 'MODIFIED']
-        }
+        status: { in: ['PENDING', 'MODIFIED'] }
       }
     });
 
-    for (const file of files) {
-      await prisma.file.update({
-        where: { id: file.id },
+    // Actualizar todos los estados a PROCESSING en batch
+    if (files.length > 0) {
+      await prisma.file.updateMany({
+        where: {
+          id: { in: files.map(f => f.id) }
+        },
         data: { status: 'PROCESSING' }
       });
 
-      await documentQueue.add('parse', {
-        jobType: JobType.PARSE_DOCUMENT,
-        filePath: file.filePath,
-        filename: file.fileName,
-        fileType: file.fileExtension,
-        metadata: { fileId: file.id }
-      });
+      // Agregar trabajos a la cola
+      for (const file of files) {
+        await documentQueue.add('parse', {
+          jobType: JobType.PARSE_DOCUMENT,
+          filePath: file.filePath,
+          filename: file.fileName,
+          fileType: file.fileExtension,
+          metadata: { fileId: file.id }
+        });
+      }
     }
 
     return files.length;
@@ -206,9 +186,7 @@ export class FileTrackerService {
   async getPendingFiles() {
     return await prisma.file.findMany({
       where: {
-        status: {
-          in: ['PENDING', 'MODIFIED']
-        }
+        status: { in: ['PENDING', 'MODIFIED'] }
       }
     });
   }
