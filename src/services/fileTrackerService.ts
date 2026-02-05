@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { documentQueue } from '../queues/documentQueue';
 import { JobType } from '../types/jobs.types';
+import { qdrantClient, COLLECTION_NAME } from '../config/qdrant';
 
 type FileStatus = 'PENDING' | 'MODIFIED' | 'PROCESSING' | 'COMPLETED' | 'ERROR' | 'DELETED';
 
@@ -16,6 +17,7 @@ interface FileUpdateData {
   fileSize?: number;
   lastError?: string | null;
   processingAttempts?: { increment: number };
+  qdrantPointId?: string | null;
 }
 
 export class FileTrackerService {
@@ -28,7 +30,7 @@ export class FileTrackerService {
   /**
    * Helper: Actualiza un archivo en la base de datos
    */
-  private async updateFile(fileId: string, data: FileUpdateData): Promise<void> {
+  private async updateFile(fileId: string, data: FileUpdateData) {
     await prisma.file.update({
       where: { id: fileId },
       data
@@ -44,6 +46,21 @@ export class FileTrackerService {
         status: { in: statuses }
       }
     });
+  }
+
+  /**
+   * Helper: Elimina un vector de Qdrant
+   */
+  private async deleteFromQdrant(qdrantPointId: string) {
+    try {
+      await qdrantClient.delete(COLLECTION_NAME, {
+        points: [qdrantPointId]
+      });
+      console.log(`Vector eliminado de Qdrant: ${qdrantPointId}`);
+    } catch (error) {
+      console.error(`Error eliminando vector ${qdrantPointId} de Qdrant:`, error);
+      // No lanzamos el error para que el proceso continúe
+    }
   }
 
   /**
@@ -203,17 +220,18 @@ export class FileTrackerService {
   /**
    * Marca un archivo como procesado correctamente
    */
-  async markFileAsProcessed(fileId: string): Promise<void> {
+  async markFileAsProcessed(fileId: string, qdrantPointId?: string) {
     await this.updateFile(fileId, {
       status: 'COMPLETED',
-      processingAttempts: { increment: 1 }
+      processingAttempts: { increment: 1 },
+      qdrantPointId: qdrantPointId || null
     });
   }
 
   /**
    * Marca un archivo con error
    */
-  async markFileAsError(fileId: string, error: string): Promise<void> {
+  async markFileAsError(fileId: string, error: string) {
     await this.updateFile(fileId, {
       status: 'ERROR',
       lastError: error,
