@@ -53,8 +53,11 @@ export class FileTrackerService {
    */
   private async deleteFromQdrant(qdrantPointId: string) {
     try {
+      // Convertir el ID a número ya que Qdrant espera números
+      const pointIdNumber = parseInt(qdrantPointId, 10);
+
       await qdrantClient.delete(COLLECTION_NAME, {
-        points: [qdrantPointId]
+        points: [pointIdNumber]
       });
       console.log(`Vector eliminado de Qdrant: ${qdrantPointId}`);
     } catch (error) {
