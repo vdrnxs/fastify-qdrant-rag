@@ -39,7 +39,10 @@ async function processDocumentJob(job: Job<QueueJobData>): Promise<DocumentJobRe
 
       // Actualizar estado del archivo si tiene fileId en metadata
       if (metadata?.fileId) {
-        await fileTrackerService.markFileAsProcessed(metadata.fileId as string);
+        await fileTrackerService.markFileAsProcessed(
+          metadata.fileId as string,
+          result.id.toString()
+        );
       }
 
       await job.updateProgress(100);
