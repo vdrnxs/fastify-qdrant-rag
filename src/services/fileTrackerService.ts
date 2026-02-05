@@ -117,12 +117,18 @@ export class FileTrackerService {
     }
 
     if (existingFile.contentHash !== contentHash) {
+      // Si el archivo fue modificado y tenía un vector en Qdrant, borrarlo
+      if (existingFile.qdrantPointId) {
+        await this.deleteFromQdrant(existingFile.qdrantPointId);
+      }
+
       await this.updateFile(existingFile.id, {
         contentHash,
         status: 'MODIFIED',
         lastModified: fileStats.mtime,
         lastScanned: new Date(),
-        fileSize: fileStats.size
+        fileSize: fileStats.size,
+        qdrantPointId: null // Limpiar el ID ya que el vector fue eliminado
       });
       return 'modified';
     }
@@ -170,6 +176,14 @@ export class FileTrackerService {
       );
 
       if (deletedFiles.length > 0) {
+        // Eliminar vectores de Qdrant para archivos eliminados
+        for (const file of deletedFiles) {
+          if (file.qdrantPointId) {
+            await this.deleteFromQdrant(file.qdrantPointId);
+          }
+        }
+
+        // Marcar archivos como DELETED en SQLite
         await prisma.file.updateMany({
           where: {
             id: { in: deletedFiles.map(f => f.id) }
