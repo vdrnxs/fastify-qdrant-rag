@@ -27,15 +27,8 @@ export class IngestionService {
         originalFilename: options.filename
       });
 
-      // 3. Cleanup condicional (borrar archivo temporal si aplica)
-      if (options.shouldCleanup && options.filePath) {
-        await this.cleanup(options.filePath);
-      }
-
-      // 4. Actualizar tracking en SQLite si aplica (FileWatcher)
-      if (options.fileId) {
-        await fileTrackerService.markFileAsProcessed(options.fileId);
-      }
+      // 3. Post-processing: cleanup y tracking
+      await this.handleSuccess(options, result.id);
 
       return {
         id: result.id,
@@ -44,24 +37,47 @@ export class IngestionService {
         metadata: options.metadata
       };
     } catch (error) {
-      // En caso de error, limpiar archivo temporal si aplica
-      if (options.shouldCleanup && options.filePath) {
-        try {
-          await this.cleanup(options.filePath);
-        } catch {
-          // Ignorar errores de cleanup
-        }
-      }
-
-      // Marcar archivo con error si tiene tracking
-      if (options.fileId) {
-        await fileTrackerService.markFileAsError(
-          options.fileId,
-          error instanceof Error ? error.message : 'Unknown error'
-        );
-      }
-
+      // 4. Error handling: cleanup y tracking
+      await this.handleError(options, error);
       throw error;
+    }
+  }
+
+  /**
+   * Maneja el post-processing exitoso: cleanup y tracking
+   */
+  private async handleSuccess(options: IngestionOptions, qdrantId: number) {
+    // Cleanup condicional
+    if (options.shouldCleanup && options.filePath) {
+      await this.cleanup(options.filePath).catch(() => {
+        // Ignorar errores de cleanup
+      });
+    }
+
+    // Tracking en SQLite
+    if (options.fileId) {
+      await fileTrackerService.markFileAsProcessed(
+        options.fileId,
+        qdrantId.toString()
+      );
+    }
+  }
+
+  /**
+   * Maneja errores: cleanup y tracking
+   */
+  private async handleError(options: IngestionOptions, error: unknown) {
+    // Cleanup condicional
+    if (options.shouldCleanup && options.filePath) {
+      await this.cleanup(options.filePath).catch(() => {
+        // Ignorar errores de cleanup
+      });
+    }
+
+    // Tracking en SQLite
+    if (options.fileId) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await fileTrackerService.markFileAsError(options.fileId, errorMessage);
     }
   }
 
@@ -89,7 +105,7 @@ export class IngestionService {
   /**
    * Limpia archivos temporales
    */
-  private async cleanup(filePath: string): Promise<void> {
+  private async cleanup(filePath: string) {
     await unlink(filePath);
   }
 }
