@@ -1,9 +1,14 @@
 import OpenAI from 'openai';
 import { Embeddings } from './base.embeddings';
+import type { OpenAIEmbeddingsConfig} from '../types';
 
-export interface OpenAIEmbeddingsConfig {
-  apiKey?: string;
-  model?: string;
+
+/**
+ * Sanitize text for embeddings by replacing newlines with spaces
+ * Recommended by OpenAI to improve embedding quality
+ */
+function sanitizeText(text: string): string {
+  return text.replace(/\n/g, ' ');
 }
 
 /**
@@ -22,15 +27,22 @@ export class OpenAIEmbeddings implements Embeddings {
   }
 
   /**
+   * Private helper to call OpenAI embeddings API
+   */
+  private async createEmbeddings(input: string | string[]) {
+    return this.client.embeddings.create({
+      model: this.model,
+      input,
+      encoding_format: 'float'
+    });
+  }
+
+  /**
    * Embed a single query text
    */
   async embedQuery(text: string): Promise<number[]> {
-    const response = await this.client.embeddings.create({
-      model: this.model,
-      input: text,
-      encoding_format: 'float'
-    });
-
+    const sanitized = sanitizeText(text);
+    const response = await this.createEmbeddings(sanitized);
     return response.data[0].embedding;
   }
 
@@ -38,12 +50,8 @@ export class OpenAIEmbeddings implements Embeddings {
    * Embed multiple documents in a single API call
    */
   async embedDocuments(texts: string[]): Promise<number[][]> {
-    const response = await this.client.embeddings.create({
-      model: this.model,
-      input: texts,
-      encoding_format: 'float'
-    });
-
+    const sanitized = texts.map(sanitizeText);
+    const response = await this.createEmbeddings(sanitized);
     return response.data.map(item => item.embedding);
   }
 }
