@@ -10,5 +10,3 @@ export const SearchSchema = z.object({
   limit: z.number().int().positive().optional().default(5)
 });
 
-export type IngestRequest = z.infer<typeof IngestSchema>;
-export type SearchRequest = z.infer<typeof SearchSchema>;
