@@ -2,10 +2,10 @@ import { FastifyInstance } from 'fastify';
 import { IngestSchema } from '../schemas';
 import { documentQueue } from '../queues/documentQueue';
 import { config } from '../config';
+import { ingestionService } from '../services/ingestionService';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
-import { JobType } from '../types/jobs.types';
-import { ingestionService } from '../services/ingestionService';
+import { JobType } from '../types';
 
 export async function documentsRoutes(fastify: FastifyInstance) {
   // Ensure temp directory exists

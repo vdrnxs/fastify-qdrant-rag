@@ -5,9 +5,9 @@ import { hashFile } from 'hasha';
 import fs from 'fs/promises';
 import path from 'path';
 import { documentQueue } from '../queues/documentQueue';
-import { JobType } from '../types/jobs.types';
 import { qdrantClient, COLLECTION_NAME } from '../config/qdrant';
-import type { FileStatus, FileUpdateData, FileMetadata, ScanStats } from '../types/fileTracker.types';
+import { JobType } from '../types';
+import type { FileStatus, FileUpdateData, FileMetadata, ScanStats } from '../types';
 
 const MONITORED_PATH = process.env.MONITORED_FOLDER_PATH || './files';
 

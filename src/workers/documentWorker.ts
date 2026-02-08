@@ -1,11 +1,11 @@
 import { Worker, Job } from 'bullmq';
 import { workerConnection } from '../config/redis';
 import { DocumentService } from '../services/documentService';
-import { DocumentJobResult, JobType } from '../types/jobs.types';
-import { QueueJobData } from '../queues/documentQueue';
 import { ParserService } from '../services/parserService';
-import { unlink } from 'fs/promises';
 import { fileTrackerService } from '../services/fileTrackerService';
+import { QueueJobData } from '../queues/documentQueue';
+import { unlink } from 'fs/promises';
+import { DocumentJobResult, JobType } from '../types';
 
 const documentService = new DocumentService();
 const parserService = new ParserService();
