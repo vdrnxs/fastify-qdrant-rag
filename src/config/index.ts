@@ -4,7 +4,7 @@ export const config = {
   qdrant: {
     url: process.env.QDRANT_URL || 'http://localhost:6333',
     collectionName: process.env.COLLECTION_NAME || 'documents',
-    vectorSize: parseInt(process.env.VECTOR_SIZE || '384')
+    vectorSize: parseInt(process.env.VECTOR_SIZE || '1536')
   },
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
