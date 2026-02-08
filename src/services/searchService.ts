@@ -1,5 +1,5 @@
 import { qdrantClient, COLLECTION_NAME } from '../config/qdrant';
-import { generateMockVector } from '../utils/vectorUtils';
+import { openaiEmbeddings } from '../embeddings/openai.embeddings';
 import { SearchResponse } from '../types';
 
 export class SearchService {
@@ -7,7 +7,7 @@ export class SearchService {
    * Busca documentos similares en Qdrant
    */
   async searchDocuments(query: string, limit: number = 10): Promise<SearchResponse> {
-    const queryVector = generateMockVector();
+    const queryVector = await openaiEmbeddings.embedQuery(query);
 
     const searchResult = await qdrantClient.query(COLLECTION_NAME, {
       query: queryVector,
