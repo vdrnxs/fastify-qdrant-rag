@@ -3,6 +3,7 @@ import multipart from '@fastify/multipart';
 import 'dotenv/config';
 import { documentsRoutes } from './routes/documents';
 import { searchRoutes } from './routes/search';
+import { chatRoutes } from './routes/chat';
 import { healthRoutes } from './routes/health';
 import { qdrantClient, COLLECTION_NAME, VECTOR_SIZE } from './config/qdrant';
 import { errorHandler } from './middleware/errorHandler';
@@ -26,6 +27,7 @@ fastify.setErrorHandler(errorHandler);
 fastify.register(healthRoutes);
 fastify.register(documentsRoutes);
 fastify.register(searchRoutes);
+fastify.register(chatRoutes);
 
 const start = async () => {
   try {

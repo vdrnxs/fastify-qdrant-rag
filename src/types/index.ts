@@ -1,4 +1,5 @@
 // Re-export all types from their respective files
+export * from './chat.types';
 export * from './common.types';
 export * from './document.types';
 export * from './fileTracker.types';
