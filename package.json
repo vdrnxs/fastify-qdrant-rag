@@ -1,8 +1,8 @@
 {
-  "name": "the-rag",
+  "name": "ragcore",
   "version": "1.0.0",
   "type": "module",
-  "description": "",
+  "description": "A flexible RAG framework for building custom AI knowledge systems",
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
